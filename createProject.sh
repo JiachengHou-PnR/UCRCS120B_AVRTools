@@ -6,6 +6,7 @@ read -p 'Project name: ' name
 read -p 'Partners name [none]: ' partner
 read -p 'Microcontroller [atmega1284]: ' mmcu
 read -p 'Clock Frequency [8000000]: ' freq
+read -p 'Include FreeRTOS (Y)es/[(N)o]: ' includeFreeRTOS
 echo "Creating project..."
 
 if [ -z "$name" ] 
@@ -108,6 +109,25 @@ cat > "$name"/test/tests.gdb << EOF
 
 EOF
 cat $SCRIPTDIR/templates/tests.gdb >> "$name"/test/tests.gdb
+
+includeFreeRTOS=${includeFreeRTOS:N}
+if [ "$includeFreeRTOS" == "Y" ]; then
+    echo "Copying FreeRTOS files..."
+    cp -R $SCRIPTDIR/FreeRTOS ./$name/
+    cp ./$name/FreeRTOS/Source/portable/MemMang/heap_1.c ./$name/FreeRTOS/Source
+    echo "Updating Makefile..."
+    freertosdefs='# FreeRTOS specific\nFREERTOSDIR=FreeRTOS/\nFREERTOSSRC=FreeRTOS/Source/\nFREERTOSSOURCES=$(wildcard $(FREERTOSSRC)*.c)\nFREERTOSMEGAPORT=$(FREERTOSSRC)portable/GCC/ATMega1284/\nFREERTOSMEGAPORTSOURCES=$(wildcard $(FREERTOSMEGAPORT)*.c)\nFREERTOSOBJS=$(patsubst $(FREERTOSSRC)%,$(PATHO)%,$(FREERTOSSOURCES:.c=.o)) \\\n\t$(patsubst $(FREERTOSMEGAPORT)%,$(PATHO)%,$(FREERTOSMEGAPORTSOURCES:.c=.o))\nFREERTOSINC=-I$(FREERTOSSRC)include/ -I$(FREERTOSMEGAPORT) -I$(FREERTOSDIR)\nOBJS+= $(FREERTOSOBJS)\n'
+    freertosrules='$(PATHO)%.o: $(FREERTOSSRC)%.c\n\t@$(AVR) $(DEBUGFLAGS) $(SIMFLAGS) $(FLAGS) $(INCLUDES) -c -o $@ $<\n\n$(PATHO)%.o: $(FREERTOSMEGAPORT)%.c\n\t@$(AVR) $(DEBUGFLAGS) $(SIMFLAGS) $(FLAGS) $(INCLUDES) -c -o $@ $<\n'
+
+    awk -v "freertosdefs=$freertosdefs" '/^CLEAN.*/ && !x {print freertosdefs; x=1} 1' $name/Makefile > $name/Makefile.new
+    mv $name/Makefile.new $name/Makefile
+
+    sed '/^INCLUDES/ s/$/ $(FREERTOSINC)/' $name/Makefile > $name/Makefile.new
+    mv $name/Makefile.new $name/Makefile
+
+    awk -v "freertosrules=$freertosrules" '/^clean.*/ && !x {print freertosrules; x=1} 1' $name/Makefile > $name/Makefile.new
+    mv $name/Makefile.new $name/Makefile
+fi
 
 echo -e "Project created, to continue working: \n"
 
